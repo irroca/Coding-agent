@@ -1,0 +1,14 @@
+{
+  "id": "02-edit-file",
+  "name": "修改已有文件",
+  "description": "Agent 读取并修改一个已有文件中的变量值",
+  "prompt": "Read config.py and change the MAX_RETRIES value from 3 to 5.",
+  "setup_commands": [
+    "echo 'MAX_RETRIES = 3\nTIMEOUT = 30' > config.py"
+  ],
+  "assertions": [
+    {"type": "file_contains", "path": "config.py", "content": "MAX_RETRIES = 5"},
+    {"type": "file_not_contains", "path": "config.py", "content": "MAX_RETRIES = 3"},
+    {"type": "file_contains", "path": "config.py", "content": "TIMEOUT = 30"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "04-fix-bug",
+  "name": "修复 Bug",
+  "description": "Agent 找到并修复一个简单的 off-by-one bug",
+  "prompt": "There's a bug in counter.py — the count function should return numbers from 1 to n inclusive, but it currently returns 0 to n-1. Fix it.",
+  "setup_commands": [
+    "echo 'def count(n):\n    return list(range(n))' > counter.py"
+  ],
+  "assertions": [
+    {"type": "file_contains", "path": "counter.py", "content": "range(1,"},
+    {"type": "file_not_contains", "path": "counter.py", "content": "range(n)"}
+  ]
+}

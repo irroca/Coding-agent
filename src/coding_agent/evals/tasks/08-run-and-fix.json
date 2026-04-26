@@ -1,0 +1,13 @@
+{
+  "id": "08-run-and-fix",
+  "name": "运行脚本并修复错误",
+  "description": "Agent 运行一个有语法错误的脚本，识别并修复",
+  "prompt": "Run app.py and fix any errors you find so that it runs successfully and prints 'OK'.",
+  "setup_commands": [
+    "echo 'def main():\n    x = [1, 2, 3\n    print(\"OK\")\n\nmain()' > app.py"
+  ],
+  "assertions": [
+    {"type": "file_exists", "path": "app.py"},
+    {"type": "command_output", "command": "python app.py", "expected": "OK"}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "03-create-project",
+  "name": "创建项目结构",
+  "description": "Agent 创建包含多个文件的项目骨架",
+  "prompt": "Create a Python project with the following structure: src/calculator.py (with add and subtract functions) and tests/test_calculator.py (with test cases for both functions using assert statements).",
+  "assertions": [
+    {"type": "file_exists", "path": "src/calculator.py"},
+    {"type": "file_exists", "path": "tests/test_calculator.py"},
+    {"type": "file_contains", "path": "src/calculator.py", "content": "def add("},
+    {"type": "file_contains", "path": "src/calculator.py", "content": "def subtract("},
+    {"type": "file_contains", "path": "tests/test_calculator.py", "content": "assert"}
+  ],
+  "max_iterations": 20
+}

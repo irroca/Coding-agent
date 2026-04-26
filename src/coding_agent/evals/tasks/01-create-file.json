@@ -1,0 +1,11 @@
+{
+  "id": "01-create-file",
+  "name": "创建 Python 文件",
+  "description": "让 Agent 创建一个包含指定内容的 Python 文件",
+  "prompt": "Create a file called hello.py with the content: print('Hello, World!')",
+  "assertions": [
+    {"type": "file_exists", "path": "hello.py"},
+    {"type": "file_contains", "path": "hello.py", "content": "print("},
+    {"type": "file_contains", "path": "hello.py", "content": "Hello"}
+  ]
+}

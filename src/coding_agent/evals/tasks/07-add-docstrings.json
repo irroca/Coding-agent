@@ -1,0 +1,13 @@
+{
+  "id": "07-add-docstrings",
+  "name": "添加文档字符串",
+  "description": "Agent 为没有 docstring 的函数添加文档",
+  "prompt": "Add a one-line docstring to every function in math_ops.py that doesn't already have one.",
+  "setup_commands": [
+    "printf 'def add(a, b):\\n    return a + b\\n\\ndef multiply(a, b):\\n    \"\"\"Multiply two numbers.\"\"\"\\n    return a * b\\n\\ndef divide(a, b):\\n    return a / b\\n' > math_ops.py"
+  ],
+  "assertions": [
+    {"type": "file_contains", "path": "math_ops.py", "content": "def add("},
+    {"type": "file_contains", "path": "math_ops.py", "content": "Multiply two numbers"}
+  ]
+}

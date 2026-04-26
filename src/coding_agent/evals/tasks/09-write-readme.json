@@ -1,0 +1,16 @@
+{
+  "id": "09-write-readme",
+  "name": "生成 README",
+  "description": "Agent 查看项目结构并生成合适的 README",
+  "prompt": "Look at the project structure and create a README.md that describes this project, lists the available modules, and provides a usage example.",
+  "setup_commands": [
+    "mkdir -p src",
+    "echo 'def greet(name): return f\"Hello, {name}!\"' > src/greeter.py",
+    "echo 'from greeter import greet\nprint(greet(\"World\"))' > src/main.py"
+  ],
+  "assertions": [
+    {"type": "file_exists", "path": "README.md"},
+    {"type": "file_contains", "path": "README.md", "content": "greeter"},
+    {"type": "file_contains", "path": "README.md", "content": "#"}
+  ]
+}

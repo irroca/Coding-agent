@@ -1,0 +1,18 @@
+{
+  "id": "06-rename-function",
+  "name": "跨文件重命名函数",
+  "description": "Agent 重命名函数并更新所有引用",
+  "prompt": "Rename the function 'calc_total' to 'calculate_total' in all files under src/.",
+  "setup_commands": [
+    "mkdir -p src",
+    "echo 'def calc_total(items):\n    return sum(items)' > src/utils.py",
+    "echo 'from utils import calc_total\n\nresult = calc_total([1, 2, 3])' > src/main.py"
+  ],
+  "assertions": [
+    {"type": "file_contains", "path": "src/utils.py", "content": "def calculate_total("},
+    {"type": "file_not_contains", "path": "src/utils.py", "content": "calc_total"},
+    {"type": "file_contains", "path": "src/main.py", "content": "calculate_total"},
+    {"type": "file_not_contains", "path": "src/main.py", "content": "calc_total"}
+  ],
+  "max_iterations": 20
+}

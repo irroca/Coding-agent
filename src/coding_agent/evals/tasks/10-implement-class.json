@@ -1,0 +1,17 @@
+{
+  "id": "10-implement-class",
+  "name": "实现一个类",
+  "description": "Agent 根据规格说明实现一个完整的 Python 类",
+  "prompt": "Create a file stack.py implementing a Stack class with methods: push(item), pop() (raises IndexError if empty), peek() (raises IndexError if empty), is_empty() -> bool, and size() -> int. Use a list internally.",
+  "assertions": [
+    {"type": "file_exists", "path": "stack.py"},
+    {"type": "file_contains", "path": "stack.py", "content": "class Stack"},
+    {"type": "file_contains", "path": "stack.py", "content": "def push("},
+    {"type": "file_contains", "path": "stack.py", "content": "def pop("},
+    {"type": "file_contains", "path": "stack.py", "content": "def peek("},
+    {"type": "file_contains", "path": "stack.py", "content": "def is_empty("},
+    {"type": "file_contains", "path": "stack.py", "content": "def size("},
+    {"type": "file_contains", "path": "stack.py", "content": "IndexError"}
+  ],
+  "max_iterations": 10
+}

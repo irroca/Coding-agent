@@ -1,0 +1,16 @@
+{
+  "id": "05-search-and-report",
+  "name": "搜索代码并报告",
+  "description": "Agent 搜索代码中的特定模式",
+  "prompt": "Find all files containing 'TODO' comments in the project and list them.",
+  "setup_commands": [
+    "mkdir -p src",
+    "echo '# TODO: implement this\ndef foo(): pass' > src/a.py",
+    "echo 'def bar(): pass' > src/b.py",
+    "echo '# TODO: refactor\ndef baz(): pass' > src/c.py"
+  ],
+  "assertions": [
+    {"type": "file_exists", "path": "src/a.py"},
+    {"type": "file_exists", "path": "src/c.py"}
+  ]
+}
