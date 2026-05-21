@@ -79,7 +79,13 @@ class EditTool(Tool):
         return ToolResult(
             call_id="", tool=self.name, ok=True,
             content=f"Replaced {replaced} occurrence(s) in {path}\n{diff}",
-            metadata={"path": str(path), "replacements": replaced},
+            metadata={
+                "path": str(path),
+                "replacements": replaced,
+                "previous_content": old_content,
+                "new_content": new_content,
+                "diff": diff,
+            },
         )
 
     def permission_request(self, params: BaseModel) -> PermissionRequest:

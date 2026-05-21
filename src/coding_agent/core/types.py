@@ -79,10 +79,21 @@ class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cached_prompt_tokens: int = 0
+    """Tokens served from prompt cache (cheap)."""
+
+    cache_creation_tokens: int = 0
+    """Tokens written to the cache this turn (Anthropic charges 1.25x, only once)."""
 
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of prompt_tokens that were served from cache (0.0-1.0)."""
+        if not self.prompt_tokens:
+            return 0.0
+        return self.cached_prompt_tokens / self.prompt_tokens
 
 
 class StreamEventType(StrEnum):

@@ -69,17 +69,35 @@ async def test_todo_write_permission_is_read(tmp_path: Path) -> None:
 # ── Task ────────────────────────────────────────────────────────────────
 
 
-async def test_task_returns_not_available(tmp_path: Path) -> None:
+async def test_task_rejects_when_subagent(tmp_path: Path) -> None:
+    """A sub-agent cannot itself dispatch a sub-agent (1-level recursion cap)."""
+    tool = TaskTool()
+    params = TaskParams(description="Search for X", prompt="Find all uses of X")
+    ctx = ToolContext(workspace=tmp_path, is_subagent=True)
+    result = await tool.run(params, ctx)
+    assert not result.ok
+    assert "recursive" in result.content.lower()
+
+
+async def test_task_requires_provider_in_context(tmp_path: Path) -> None:
     tool = TaskTool()
     params = TaskParams(description="Search for X", prompt="Find all uses of X")
     result = await tool.run(params, _ctx(tmp_path))
     assert not result.ok
-    assert "not yet available" in result.content
+    assert "provider" in result.content.lower()
 
 
-async def test_task_permission_request(tmp_path: Path) -> None:
+async def test_task_permission_request_is_read(tmp_path: Path) -> None:
+    """Sub-agents are read-only, so the permission action reflects that."""
     tool = TaskTool()
     params = TaskParams(description="Do stuff", prompt="Do things")
     perm = tool.permission_request(params)
-    assert perm.action == "ask"
+    assert perm.action == "file_read"
     assert "Do stuff" in perm.summary
+
+
+def test_subagent_tools_are_read_only() -> None:
+    """Lock down which tools sub-agents can call — this is a security boundary."""
+    from coding_agent.tools.task import SUBAGENT_TOOLS
+
+    assert frozenset({"read", "ls", "glob", "grep"}) == SUBAGENT_TOOLS

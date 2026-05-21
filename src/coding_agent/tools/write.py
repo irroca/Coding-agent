@@ -59,7 +59,13 @@ class WriteTool(Tool):
             tool=self.name,
             ok=True,
             content=summary,
-            metadata={"path": str(path), "created": not bool(old_content)},
+            metadata={
+                "path": str(path),
+                "created": not bool(old_content),
+                "previous_content": old_content,
+                "new_content": params.content,
+                "diff": diff,
+            },
         )
 
     def permission_request(self, params: BaseModel) -> PermissionRequest:

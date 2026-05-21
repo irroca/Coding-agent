@@ -42,7 +42,6 @@ class PermissionsConfig(BaseModel):
     file_read: Literal["allow", "ask", "deny"] = "allow"
     file_write: Literal["allow", "ask", "deny"] = "ask"
     bash: Literal["allow", "ask", "deny"] = "ask"
-    network: Literal["allow", "ask", "deny"] = "ask"
     rules_file: Path | None = None
     """Optional path to a YAML file containing the full rule list."""
 
@@ -60,6 +59,22 @@ class AgentConfig(BaseModel):
 
     tool_output_max_chars: int = 30_000
     """Per-tool-result truncation budget."""
+
+    subagent_max_iterations: int = 15
+    """Hard cap on iterations inside a sub-agent (`task` tool) dispatch."""
+
+    streaming_tool_dispatch: bool = True
+    """Dispatch tool calls the moment TOOL_USE_END arrives, instead of waiting
+    for the LLM stream to fully finish. Reduces perceived latency when the
+    model emits text before its tool calls."""
+
+    bash_driver: Literal["subprocess", "docker"] = "subprocess"
+    """How the bash tool runs commands. `docker` requires the `docker` CLI on
+    PATH and runs each command in a throwaway container with no network and
+    the workspace mounted at /workspace."""
+
+    bash_docker_image: str = "ubuntu:24.04"
+    """Container image used when bash_driver=docker."""
 
 
 class UIConfig(BaseModel):
@@ -88,6 +103,12 @@ class Config(BaseSettings):
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
+    mcp_servers: list[dict[str, Any]] = Field(default_factory=list)
+    """External MCP servers to connect to at startup.
+
+    Each entry: ``{name, command, args?, env?}``. Names become tool prefixes
+    (``mcp__<name>__<tool>``). Requires the ``mcp`` optional extra.
+    """
 
     @model_validator(mode="after")
     def _hydrate_providers_from_env(self) -> Config:
@@ -120,16 +141,30 @@ class Config(BaseSettings):
             },
         }
         defaults = {
-            "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+            "deepseek": {
+                "base_url": "https://api.deepseek.com",
+                "model": "deepseek-chat",
+                "supports_prompt_cache": True,
+            },
             "qwen": {
                 "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
                 "model": "qwen3-coder-plus",
+                "supports_prompt_cache": False,
             },
-            "moonshot": {"base_url": "https://api.moonshot.cn/v1", "model": "kimi-k2-0905-preview"},
-            "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
+            "moonshot": {
+                "base_url": "https://api.moonshot.cn/v1",
+                "model": "kimi-k2-0905-preview",
+                "supports_prompt_cache": False,
+            },
+            "openai": {
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-4o-mini",
+                "supports_prompt_cache": True,
+            },
             "anthropic": {
                 "base_url": "https://api.anthropic.com",
                 "model": "claude-sonnet-4-6",
+                "supports_prompt_cache": True,
             },
         }
         for name, mapping in env_map.items():
@@ -140,7 +175,16 @@ class Config(BaseSettings):
                     if val:
                         setattr(existing, field, val)
             for field, default in defaults[name].items():
-                if getattr(existing, field) is None:
+                current = getattr(existing, field, None)
+                # For supports_prompt_cache (bool), the pydantic default of
+                # False is indistinguishable from "user explicitly disabled".
+                # We treat False as "not set yet" — most users want it on for
+                # supported providers, and a user who really wants it off can
+                # rely on the per-provider default (which is False for
+                # qwen/moonshot today).
+                if current is None or (
+                    field == "supports_prompt_cache" and current is False
+                ):
                     setattr(existing, field, default)
             self.providers[name] = existing
         return self

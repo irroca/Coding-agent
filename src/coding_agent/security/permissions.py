@@ -36,7 +36,7 @@ class PermissionEngine:
       2. User-defined rules (from config / YAML)
       3. Built-in allow rules (convenience auto-approvals)
       4. Command guard heuristics (for bash)
-      5. Config defaults (file_read=allow, file_write=ask, bash=ask, network=ask)
+      5. Config defaults (file_read=allow, file_write=ask, bash=ask)
     """
 
     def __init__(
@@ -94,7 +94,6 @@ class PermissionEngine:
             "file_read": self.config.file_read,
             "file_write": self.config.file_write,
             "bash": self.config.bash,
-            "network": self.config.network,
         }
         val = mapping.get(action, "ask")
         return Decision(val)

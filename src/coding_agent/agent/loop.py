@@ -20,7 +20,11 @@ from enum import StrEnum
 
 from coding_agent.agent.compaction import compact_messages
 from coding_agent.agent.context import ContextBudget
-from coding_agent.agent.orchestrator import ConfirmCallback, execute_tool_calls
+from coding_agent.agent.orchestrator import (
+    ConfirmCallback,
+    execute_single_call,
+    execute_tool_calls,
+)
 from coding_agent.agent.prompts import build_system_prompt
 from coding_agent.core.config import Config
 from coding_agent.core.logging import get_logger
@@ -81,16 +85,23 @@ class Agent:
         session: Session,
         *,
         confirm: ConfirmCallback | None = None,
+        allowed_tools: set[str] | None = None,
+        is_subagent: bool = False,
     ) -> None:
         self.provider = provider
         self.config = config
         self.session = session
         self.confirm = confirm
+        self.allowed_tools = allowed_tools
+        self.is_subagent = is_subagent
         self._cancel = asyncio.Event()
 
         self._ctx = ToolContext(
             workspace=config.workspace.resolve(),
             session_id=session.id,
+            provider=provider,
+            config=config,
+            is_subagent=is_subagent,
         )
 
         user_rules = RuleSet()
@@ -154,8 +165,14 @@ class Agent:
             tool_arg_buffers: dict[str, list[str]] = {}
             tool_names: dict[str, str] = {}
 
+            streaming_dispatch = self.config.agent.streaming_tool_dispatch
+            # tool_call_id → asyncio.Task[ToolResult] kicked off the moment
+            # TOOL_USE_END arrives. Preserves model-requested order.
+            inflight: dict[str, asyncio.Task[ToolResult]] = {}
+            inflight_order: list[str] = []
+
             try:
-                schemas = all_schemas()
+                schemas = all_schemas(self.allowed_tools)
                 stream = self.provider.stream(
                     self.session.messages,
                     schemas,
@@ -164,6 +181,8 @@ class Agent:
 
                 async for event in stream:
                     if self._cancel.is_set():
+                        for t in inflight.values():
+                            t.cancel()
                         yield AgentEvent(kind=EventKind.ERROR, error="Cancelled by user.")
                         return
 
@@ -199,13 +218,24 @@ class Agent:
                             args = json.loads(raw_args) if raw_args else {}
                         except json.JSONDecodeError:
                             args = {}
-                        tool_calls.append(
-                            ToolCall(
-                                id=tc_id,
-                                name=tool_names.get(tc_id, ""),
-                                arguments=args,
-                            )
+                        call = ToolCall(
+                            id=tc_id,
+                            name=tool_names.get(tc_id, ""),
+                            arguments=args,
                         )
+                        tool_calls.append(call)
+                        if streaming_dispatch:
+                            task = asyncio.create_task(
+                                execute_single_call(
+                                    call,
+                                    self._ctx,
+                                    confirm=self.confirm,
+                                    permission_engine=self._permission_engine,
+                                    audit_log=self._audit_log,
+                                )
+                            )
+                            inflight[call.id] = task
+                            inflight_order.append(call.id)
 
                     elif event.type == StreamEventType.USAGE and event.usage:
                         turn_usage = event.usage
@@ -214,6 +244,8 @@ class Agent:
                         finish_reason = event.finish_reason
 
                     elif event.type == StreamEventType.ERROR:
+                        for t in inflight.values():
+                            t.cancel()
                         yield AgentEvent(
                             kind=EventKind.ERROR,
                             error=event.error or "Unknown provider error",
@@ -221,6 +253,8 @@ class Agent:
                         return
 
             except Exception as e:
+                for t in inflight.values():
+                    t.cancel()
                 log.error("agent_stream_error", error=str(e), exc_info=True)
                 yield AgentEvent(
                     kind=EventKind.ERROR,
@@ -249,15 +283,47 @@ class Agent:
                 self.session.save()
                 return
 
-            # -- execute tool calls --
-            results = await execute_tool_calls(
-                tool_calls,
-                self._ctx,
-                confirm=self.confirm,
-                parallel=self.config.agent.parallel_tool_calls,
-                permission_engine=self._permission_engine,
-                audit_log=self._audit_log,
-            )
+            # -- gather tool results, dispatched either streaming or after-DONE --
+            if streaming_dispatch:
+                results: list[ToolResult] = []
+                for tc_id in inflight_order:
+                    try:
+                        r = await inflight[tc_id]
+                    except asyncio.CancelledError:
+                        results.append(
+                            ToolResult(
+                                call_id=tc_id,
+                                tool=tool_names.get(tc_id, ""),
+                                ok=False,
+                                content="Cancelled by user.",
+                            )
+                        )
+                    except Exception as exc:
+                        log.error(
+                            "streaming_tool_exception",
+                            tool_call_id=tc_id, error=str(exc),
+                            exc_info=True,
+                        )
+                        results.append(
+                            ToolResult(
+                                call_id=tc_id,
+                                tool=tool_names.get(tc_id, ""),
+                                ok=False,
+                                content=f"Internal error: {type(exc).__name__}: {exc}",
+                            )
+                        )
+                    else:
+                        results.append(r)
+            else:
+                results = await execute_tool_calls(
+                    tool_calls,
+                    self._ctx,
+                    confirm=self.confirm,
+                    parallel=self.config.agent.parallel_tool_calls,
+                    permission_engine=self._permission_engine,
+                    audit_log=self._audit_log,
+                )
+
             self.session.add_tool_results(results)
 
             for r in results:

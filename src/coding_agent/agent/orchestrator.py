@@ -58,7 +58,7 @@ async def execute_tool_calls(
         return []
 
     async def _run_one(call: ToolCall) -> ToolResult:
-        return await _execute_single(
+        return await execute_single_call(
             call, ctx,
             confirm=confirm,
             permission_engine=permission_engine,
@@ -70,6 +70,23 @@ async def execute_tool_calls(
         return list(results)
 
     return [await _run_one(c) for c in calls]
+
+
+async def execute_single_call(
+    call: ToolCall,
+    ctx: ToolContext,
+    *,
+    confirm: ConfirmCallback | None = None,
+    permission_engine: PermissionEngine | None = None,
+    audit_log: AuditLog | None = None,
+) -> ToolResult:
+    """Public single-call entry point used by streaming dispatch in the loop."""
+    return await _execute_single(
+        call, ctx,
+        confirm=confirm,
+        permission_engine=permission_engine,
+        audit_log=audit_log,
+    )
 
 
 async def _execute_single(
@@ -138,8 +155,8 @@ async def _execute_single(
                     content="User denied this action.",
                 )
     else:
-        # Fallback: no engine → ask for all writes/bash/network
-        if perm.action in ("file_write", "bash", "network") and confirm is not None:
+        # Fallback: no engine → ask for all writes/bash
+        if perm.action in ("file_write", "bash") and confirm is not None:
             diff_preview = None
             if hasattr(tool, "generate_diff"):
                 import contextlib

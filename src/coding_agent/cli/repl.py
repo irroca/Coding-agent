@@ -61,6 +61,16 @@ async def _async_repl(
 ) -> None:
     reset_config_cache()
     config = load_config()
+
+    # Discover third-party plugins (tools / providers / slash commands).
+    # Must run *before* we build the provider so plugin-provided providers
+    # can be selected via --provider.
+    from coding_agent.plugins import load_plugins
+
+    plugin_summary = load_plugins()
+    if any(plugin_summary.values()):
+        log.info("plugins_loaded", **plugin_summary)
+
     console = Console(theme=THEME)
 
     try:
@@ -99,6 +109,24 @@ async def _async_repl(
     renderer = Renderer(console=console)
     agent = Agent(provider, config, session, confirm=_confirm)
     prompt_session = create_prompt_session()
+
+    # ── Optional: connect external MCP servers and inject their tools ──
+    mcp_host = None
+    if config.mcp_servers:
+        try:
+            from coding_agent.mcp.client import McpClientHost, specs_from_config
+
+            mcp_host = McpClientHost(specs_from_config(config.mcp_servers))
+            await mcp_host.start()
+        except ImportError:
+            console.print(
+                "  [yellow]mcp_servers configured but `mcp` extra is not "
+                "installed. Run `pip install coding-agent[mcp]`.[/yellow]"
+            )
+            mcp_host = None
+        except Exception as e:
+            console.print(f"  [yellow]Failed to start MCP host: {e}[/yellow]")
+            mcp_host = None
 
     _banner(console, config, provider)
 
@@ -149,3 +177,5 @@ async def _async_repl(
 
     if hasattr(provider, "aclose"):
         await provider.aclose()
+    if mcp_host is not None:
+        await mcp_host.aclose()

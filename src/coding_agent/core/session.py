@@ -77,9 +77,32 @@ class Session(BaseModel):
     def snapshot_path(self) -> Path:
         return _sessions_dir() / f"{self.id}.json"
 
-    def save(self) -> Path:
+    def save(self, *, redact_secrets: bool = True) -> Path:
+        """Persist the session to disk.
+
+        When ``redact_secrets`` is true (the default) every message content
+        and tool-result payload is scanned and any detected API keys are
+        replaced with ``<kind:abcd…xy>`` placeholders **in the serialised
+        copy only** — the in-memory ``Session`` is unchanged so the live
+        conversation continues with full fidelity. This guarantees that a
+        leaked key never lands on disk in ``sessions/*.json``.
+        """
         path = self.snapshot_path()
-        path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
+        if redact_secrets:
+            from coding_agent.security.secrets import redact
+
+            payload = self.model_dump(mode="json")
+            for msg in payload.get("messages", []):
+                if isinstance(msg.get("content"), str):
+                    msg["content"] = redact(msg["content"])
+                if isinstance(msg.get("reasoning_content"), str):
+                    msg["reasoning_content"] = redact(msg["reasoning_content"])
+                for r in msg.get("tool_results") or []:
+                    if isinstance(r.get("content"), str):
+                        r["content"] = redact(r["content"])
+            path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        else:
+            path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
         return path
 
     @classmethod

@@ -309,3 +309,234 @@ def test_capability_metadata() -> None:
     assert provider.context_window == 64_000
     assert provider.max_output_tokens == 4_096
     assert provider.model == "test-model"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Adversarial / conformance tests for the SSE protocol implementation.
+# These exist to catch regressions in `_ToolCallAccumulator` and the SSE
+# consumer, which between them are the most subtle code in the project.
+# ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stream_ignores_leading_empty_deltas() -> None:
+    """DeepSeek often emits several empty `delta:{}` chunks before any real
+    content. They must not produce TEXT_DELTA events."""
+    body = _sse(
+        {"choices": [{"index": 0, "delta": {}}]},
+        {"choices": [{"index": 0, "delta": {}}]},
+        {"choices": [{"index": 0, "delta": {"content": "hello"}}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+        "data: [DONE]\n\n",
+    )
+    with respx.mock:
+        respx.post("https://api.test.example/chat/completions").mock(
+            return_value=httpx.Response(200, text=body)
+        )
+        provider = OpenAICompatProvider(_config())
+        events = [
+            e async for e in provider.stream([Message(role=Role.USER, content="hi")], [])
+        ]
+        await provider.aclose()
+
+    text_events = [e for e in events if e.type == StreamEventType.TEXT_DELTA]
+    assert len(text_events) == 1
+    assert text_events[0].text == "hello"
+
+
+@pytest.mark.asyncio
+async def test_stream_usage_chunk_after_done_marker() -> None:
+    """OpenAI sends usage on a final chunk with empty `choices` after
+    `finish_reason`. Make sure we still parse it."""
+    body = _sse(
+        {"choices": [{"index": 0, "delta": {"content": "OK"}, "finish_reason": "stop"}]},
+        {"choices": [], "usage": {"prompt_tokens": 42, "completion_tokens": 5}},
+        "data: [DONE]\n\n",
+    )
+    with respx.mock:
+        respx.post("https://api.test.example/chat/completions").mock(
+            return_value=httpx.Response(200, text=body)
+        )
+        provider = OpenAICompatProvider(_config())
+        events = [
+            e async for e in provider.stream([Message(role=Role.USER, content="hi")], [])
+        ]
+        await provider.aclose()
+
+    usages = [e for e in events if e.type == StreamEventType.USAGE]
+    real = [u for u in usages if u.usage and u.usage.prompt_tokens == 42]
+    assert real, f"usage chunk after DONE was not captured: {usages}"
+    assert real[0].usage.completion_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_stream_deepseek_cache_hit_field_propagated() -> None:
+    """DeepSeek uses `prompt_cache_hit_tokens` instead of OpenAI's nested
+    `prompt_tokens_details.cached_tokens`. Both must end up in `cached_prompt_tokens`."""
+    body = _sse(
+        {"choices": [{"index": 0, "delta": {"content": "x"}, "finish_reason": "stop"}]},
+        {
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 10,
+                "prompt_cache_hit_tokens": 80,
+            },
+        },
+        "data: [DONE]\n\n",
+    )
+    with respx.mock:
+        respx.post("https://api.test.example/chat/completions").mock(
+            return_value=httpx.Response(200, text=body)
+        )
+        provider = OpenAICompatProvider(_config())
+        events = [
+            e async for e in provider.stream([Message(role=Role.USER, content="hi")], [])
+        ]
+        await provider.aclose()
+
+    usage_event = next(
+        e for e in events
+        if e.type == StreamEventType.USAGE and e.usage and e.usage.prompt_tokens
+    )
+    assert usage_event.usage.cached_prompt_tokens == 80
+
+
+@pytest.mark.asyncio
+async def test_stream_interleaved_text_then_tool_then_text() -> None:
+    """Models often emit a prefix sentence, the tool call, then a postfix.
+    Order of canonical events must reflect the wire order."""
+    body = _sse(
+        {"choices": [{"index": 0, "delta": {"content": "first "}}]},
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_a",
+                                "function": {"name": "ls", "arguments": "{}"},
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        {"choices": [{"index": 0, "delta": {"content": " then last"}}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+        "data: [DONE]\n\n",
+    )
+    with respx.mock:
+        respx.post("https://api.test.example/chat/completions").mock(
+            return_value=httpx.Response(200, text=body)
+        )
+        provider = OpenAICompatProvider(_config())
+        events = [
+            e async for e in provider.stream([Message(role=Role.USER, content="hi")], [])
+        ]
+        await provider.aclose()
+
+    kinds = [e.type for e in events]
+    # Expected order: TEXT_DELTA, TOOL_USE_START, TOOL_USE_DELTA, TEXT_DELTA,
+    # then (after consume_sse loop ends) TOOL_USE_END, USAGE, DONE.
+    assert kinds[0] == StreamEventType.TEXT_DELTA
+    text_indices = [i for i, k in enumerate(kinds) if k == StreamEventType.TEXT_DELTA]
+    tool_start = kinds.index(StreamEventType.TOOL_USE_START)
+    # The second text delta must come after the tool_use_start to prove we
+    # preserve ordering.
+    assert text_indices[1] > tool_start
+
+
+@pytest.mark.asyncio
+async def test_stream_two_parallel_tool_calls_indexed_correctly() -> None:
+    """Two tool calls indexed 0 and 1. ids and arguments must not get
+    cross-contaminated even though the deltas arrive interleaved."""
+    body = _sse(
+        # Both calls are introduced (id + name) in the same chunk
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {"index": 0, "id": "tc-a", "function": {"name": "ls"}},
+                            {"index": 1, "id": "tc-b", "function": {"name": "read"}},
+                        ]
+                    },
+                }
+            ]
+        },
+        # arguments arrive interleaved across multiple deltas
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": "{\"path\":"}},
+                            {"index": 1, "function": {"arguments": "{\"file_path\":"}},
+                        ]
+                    },
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": "\".\"}"}},
+                            {"index": 1, "function": {"arguments": "\"x.txt\"}"}},
+                        ]
+                    },
+                }
+            ]
+        },
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+        "data: [DONE]\n\n",
+    )
+    with respx.mock:
+        respx.post("https://api.test.example/chat/completions").mock(
+            return_value=httpx.Response(200, text=body)
+        )
+        provider = OpenAICompatProvider(_config())
+        events = [
+            e async for e in provider.stream([Message(role=Role.USER, content="hi")], [])
+        ]
+        await provider.aclose()
+
+    # Reconstruct per-call argument buffers from the events.
+    buffers: dict[str, list[str]] = {}
+    for e in events:
+        if e.type == StreamEventType.TOOL_USE_DELTA and e.tool_call_id:
+            buffers.setdefault(e.tool_call_id, []).append(e.arguments_delta or "")
+
+    assert "tc-a" in buffers and "tc-b" in buffers
+    assert json.loads("".join(buffers["tc-a"])) == {"path": "."}
+    assert json.loads("".join(buffers["tc-b"])) == {"file_path": "x.txt"}
+
+
+@pytest.mark.asyncio
+async def test_stream_synthesizes_usage_event_when_vendor_omits() -> None:
+    """Some vendors (or proxies) never emit a usage block. We must still
+    produce one USAGE event so downstream accounting doesn't crash."""
+    body = _sse(
+        {"choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": "stop"}]},
+        "data: [DONE]\n\n",
+    )
+    with respx.mock:
+        respx.post("https://api.test.example/chat/completions").mock(
+            return_value=httpx.Response(200, text=body)
+        )
+        provider = OpenAICompatProvider(_config())
+        events = [
+            e async for e in provider.stream([Message(role=Role.USER, content="hi")], [])
+        ]
+        await provider.aclose()
+
+    usage_events = [e for e in events if e.type == StreamEventType.USAGE]
+    assert len(usage_events) == 1
+    assert usage_events[0].usage is not None  # synthetic empty Usage()

@@ -92,15 +92,27 @@ def _messages_to_anthropic(messages: list[Message]) -> list[dict[str, Any]]:
     return out
 
 
-def _tools_to_anthropic(tools: list[ToolSchema]) -> list[dict[str, Any]]:
-    return [
-        {
+def _tools_to_anthropic(
+    tools: list[ToolSchema], *, cache_last: bool = False,
+) -> list[dict[str, Any]]:
+    """Convert canonical ToolSchemas to Anthropic's tool format.
+
+    When ``cache_last`` is True the last tool gets a ``cache_control`` marker,
+    which tells the server to cache everything up to and including the tools
+    block. Anthropic caches inputs in declaration order, so a marker on the
+    final tool covers ``system`` + all tools in one breakpoint.
+    """
+    out: list[dict[str, Any]] = []
+    for i, t in enumerate(tools):
+        entry: dict[str, Any] = {
             "name": t.name,
             "description": t.description,
             "input_schema": t.parameters,
         }
-        for t in tools
-    ]
+        if cache_last and i == len(tools) - 1:
+            entry["cache_control"] = {"type": "ephemeral"}
+        out.append(entry)
+    return out
 
 
 class AnthropicProvider(LLMProvider):
@@ -133,6 +145,8 @@ class AnthropicProvider(LLMProvider):
         max_tokens: int | None = None,
     ) -> AsyncIterator[StreamEvent]:
         system, rest = _split_system(messages)
+        cache_enabled = self.config.supports_prompt_cache
+
         body: dict[str, Any] = {
             "model": self.model,
             "messages": _messages_to_anthropic(rest),
@@ -140,9 +154,22 @@ class AnthropicProvider(LLMProvider):
             "max_tokens": max_tokens or self.max_output_tokens,
         }
         if system:
-            body["system"] = system
+            if cache_enabled:
+                # Wrap the system prompt as a single text block with an
+                # ephemeral cache marker. The marker covers the system block
+                # and any preceding content (none here), giving us a stable
+                # prefix that survives across turns.
+                body["system"] = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                body["system"] = system
         if tools:
-            body["tools"] = _tools_to_anthropic(tools)
+            body["tools"] = _tools_to_anthropic(tools, cache_last=cache_enabled)
         if temperature is not None:
             body["temperature"] = temperature
 
@@ -251,25 +278,12 @@ class AnthropicProvider(LLMProvider):
                     finish_reason = delta["stop_reason"]
                 u = chunk.get("usage")
                 if u:
-                    usage = Usage(
-                        prompt_tokens=u.get("input_tokens", usage.prompt_tokens),
-                        completion_tokens=u.get(
-                            "output_tokens", usage.completion_tokens
-                        ),
-                        cached_prompt_tokens=u.get(
-                            "cache_read_input_tokens",
-                            usage.cached_prompt_tokens,
-                        ),
-                    )
+                    usage = _merge_anthropic_usage(usage, u)
 
             elif etype == "message_start":
                 msg = chunk.get("message") or {}
                 u = msg.get("usage") or {}
-                usage = Usage(
-                    prompt_tokens=u.get("input_tokens", 0),
-                    completion_tokens=u.get("output_tokens", 0),
-                    cached_prompt_tokens=u.get("cache_read_input_tokens", 0),
-                )
+                usage = _merge_anthropic_usage(Usage(), u)
 
             elif etype == "message_stop":
                 pass
@@ -279,6 +293,31 @@ class AnthropicProvider(LLMProvider):
             type=StreamEventType.DONE,
             finish_reason=_normalize_anthropic_finish(finish_reason),
         )
+
+
+def _merge_anthropic_usage(prev: Usage, u: dict[str, Any]) -> Usage:
+    """Normalize Anthropic usage payloads into our canonical Usage.
+
+    Anthropic reports ``input_tokens``, ``cache_read_input_tokens``, and
+    ``cache_creation_input_tokens`` as three disjoint counters. To stay
+    consistent with OpenAI semantics (``prompt_tokens`` = full prompt size
+    including cache reads), we sum them into ``prompt_tokens`` and keep the
+    cache breakdown in dedicated fields.
+    """
+    cache_read = u.get("cache_read_input_tokens", prev.cached_prompt_tokens)
+    cache_creation = u.get(
+        "cache_creation_input_tokens", prev.cache_creation_tokens
+    )
+    input_tokens = u.get(
+        "input_tokens",
+        max(prev.prompt_tokens - prev.cached_prompt_tokens - prev.cache_creation_tokens, 0),
+    )
+    return Usage(
+        prompt_tokens=input_tokens + cache_read + cache_creation,
+        completion_tokens=u.get("output_tokens", prev.completion_tokens),
+        cached_prompt_tokens=cache_read,
+        cache_creation_tokens=cache_creation,
+    )
 
 
 def _normalize_anthropic_finish(reason: str | None):  # type: ignore[no-untyped-def]

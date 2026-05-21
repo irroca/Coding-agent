@@ -37,13 +37,20 @@ def cmd_clear(console: Console, **_) -> None:
     console.clear()
 
 
-@slash("cost", "Show session token usage and estimated cost")
+@slash("cost", "Show session token usage, cache hit rate, and estimated cost")
 def cmd_cost(console: Console, session: Session, **_) -> None:
     u = session.usage
     console.print(f"  Prompt tokens:     {u.prompt_tokens:,}")
     console.print(f"  Completion tokens: {u.completion_tokens:,}")
     console.print(f"  Cached tokens:     {u.cached_prompt_tokens:,}")
+    if u.cache_creation_tokens:
+        console.print(f"  Cache writes:      {u.cache_creation_tokens:,}")
     console.print(f"  Total tokens:      {u.total_tokens:,}")
+    if u.prompt_tokens:
+        console.print(
+            f"  Cache hit rate:    {u.cache_hit_rate * 100:.1f}% "
+            f"[dim]({u.cached_prompt_tokens:,}/{u.prompt_tokens:,})[/dim]"
+        )
 
 
 @slash("model", "Show current model info")
@@ -121,7 +128,6 @@ def cmd_permissions(console: Console, **_) -> None:
     console.print(f"  file_read:  {p.file_read}")
     console.print(f"  file_write: {p.file_write}")
     console.print(f"  bash:       {p.bash}")
-    console.print(f"  network:    {p.network}")
     if p.rules_file:
         console.print(f"  rules_file: {p.rules_file}")
 
@@ -136,3 +142,101 @@ def cmd_tools(console: Console, **_) -> None:
     for name, cls in sorted(all_tools().items()):
         table.add_row(name, cls.description[:80])
     console.print(table)
+
+
+@slash("diff", "Show the cumulative diff of file changes made this session")
+def cmd_diff(console: Console, session: Session, **_) -> None:
+    """Reconstruct unified diffs from every write/edit tool result on record."""
+    from collections import OrderedDict
+
+    # path → (first_pre_image, latest_post_image). We collapse repeated writes
+    # to the same file so the displayed diff is "before any change → now".
+    file_snapshots: OrderedDict[str, tuple[str, str]] = OrderedDict()
+
+    for msg in session.messages:
+        if msg.role.value != "tool":
+            continue
+        for r in msg.tool_results:
+            if r.tool not in ("write", "edit") or not r.ok:
+                continue
+            path = r.metadata.get("path")
+            prev = r.metadata.get("previous_content")
+            new = r.metadata.get("new_content")
+            if not path or prev is None or new is None:
+                continue
+            if path in file_snapshots:
+                first_prev, _ = file_snapshots[path]
+                file_snapshots[path] = (first_prev, new)
+            else:
+                file_snapshots[path] = (prev, new)
+
+    if not file_snapshots:
+        console.print("  [dim]No file changes recorded in this session yet.[/dim]")
+        return
+
+    import difflib
+    from pathlib import Path
+
+    for path, (prev, new) in file_snapshots.items():
+        name = Path(path).name
+        diff_text = "".join(
+            difflib.unified_diff(
+                prev.splitlines(keepends=True),
+                new.splitlines(keepends=True),
+                fromfile=f"a/{name}",
+                tofile=f"b/{name}",
+            )
+        )
+        if not diff_text:
+            continue
+        console.print(f"\n[bold]{path}[/bold]")
+        for line in diff_text.splitlines():
+            style = ""
+            if line.startswith("+++") or line.startswith("---"):
+                style = "bold"
+            elif line.startswith("+"):
+                style = "green"
+            elif line.startswith("-"):
+                style = "red"
+            elif line.startswith("@@"):
+                style = "cyan"
+            console.print(line, style=style, highlight=False)
+
+
+@slash("undo", "Revert the last write/edit performed by the agent")
+def cmd_undo(console: Console, session: Session, **_) -> None:
+    """Pop the most recent successful write/edit and restore its pre-image.
+
+    Only file_write actions are undoable; bash side-effects are not."""
+    from pathlib import Path
+
+    for msg in reversed(session.messages):
+        if msg.role.value != "tool":
+            continue
+        for r in reversed(msg.tool_results):
+            if r.tool not in ("write", "edit") or not r.ok:
+                continue
+            if r.metadata.get("undone"):
+                continue
+            path_str = r.metadata.get("path")
+            prev = r.metadata.get("previous_content")
+            if not path_str or prev is None:
+                continue
+            target = Path(path_str)
+            try:
+                if prev == "" and r.metadata.get("created"):
+                    # File didn't exist before — delete it.
+                    target.unlink(missing_ok=True)
+                    action = "deleted"
+                else:
+                    target.write_text(prev, encoding="utf-8")
+                    action = "restored"
+            except OSError as e:
+                console.print(f"  [red]Cannot undo {target}: {e}[/red]")
+                return
+            r.metadata["undone"] = True
+            console.print(f"  [yellow]Undone[/yellow]: {action} {target}")
+            session.save()
+            return
+
+    console.print("  [dim]No undoable write/edit in this session.[/dim]")

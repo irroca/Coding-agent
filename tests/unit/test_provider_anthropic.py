@@ -5,14 +5,25 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 import respx
 
 from coding_agent.core.config import ProviderConfig
-from coding_agent.core.types import Message, Role, StreamEventType, ToolCall, ToolResult
+from coding_agent.core.types import (
+    Message,
+    Role,
+    StreamEventType,
+    ToolCall,
+    ToolResult,
+    ToolSchema,
+    Usage,
+)
 from coding_agent.providers.anthropic import (
     AnthropicProvider,
+    _merge_anthropic_usage,
     _messages_to_anthropic,
     _split_system,
+    _tools_to_anthropic,
 )
 
 
@@ -122,3 +133,120 @@ async def test_anthropic_stream_text_and_tool() -> None:
     done = events[-1]
     assert done.type == StreamEventType.DONE
     assert done.finish_reason == "tool_calls"
+
+
+# ── Prompt cache integration ──────────────────────────────────────────
+
+
+def test_tools_to_anthropic_marks_last_tool_when_caching() -> None:
+    schemas = [
+        ToolSchema(name="a", description="A", parameters={"type": "object"}),
+        ToolSchema(name="b", description="B", parameters={"type": "object"}),
+    ]
+    no_cache = _tools_to_anthropic(schemas, cache_last=False)
+    assert all("cache_control" not in t for t in no_cache)
+
+    with_cache = _tools_to_anthropic(schemas, cache_last=True)
+    assert "cache_control" not in with_cache[0]
+    assert with_cache[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_request_includes_cache_control_when_enabled() -> None:
+    """When supports_prompt_cache=True, system gets a text block with
+    cache_control and the last tool also gets a cache_control marker."""
+    captured: dict = {}
+
+    def _capture(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            text=(
+                'event: message_start\ndata: {"message":{"usage":{"input_tokens":1,"output_tokens":0}}}\n\n'
+                'event: message_stop\ndata: {}\n\n'
+            ),
+        )
+
+    with respx.mock:
+        respx.post("https://anthropic.test.example/v1/messages").mock(side_effect=_capture)
+
+        cfg = ProviderConfig(
+            api_key="sk-x",
+            base_url="https://anthropic.test.example",
+            model="claude-test",
+            supports_prompt_cache=True,
+        )
+        provider = AnthropicProvider(cfg)
+        tools = [ToolSchema(name="ls", description="list", parameters={"type": "object"})]
+        [
+            e async for e in provider.stream(
+                [Message(role=Role.SYSTEM, content="x"), Message(role=Role.USER, content="hi")],
+                tools,
+            )
+        ]
+        await provider.aclose()
+
+    body = captured["body"]
+    assert isinstance(body["system"], list)
+    assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert body["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_request_no_cache_when_disabled() -> None:
+    captured: dict = {}
+
+    def _capture(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            text=(
+                'event: message_start\ndata: {"message":{"usage":{"input_tokens":1,"output_tokens":0}}}\n\n'
+                'event: message_stop\ndata: {}\n\n'
+            ),
+        )
+
+    with respx.mock:
+        respx.post("https://anthropic.test.example/v1/messages").mock(side_effect=_capture)
+
+        cfg = ProviderConfig(
+            api_key="sk-x",
+            base_url="https://anthropic.test.example",
+            model="claude-test",
+            supports_prompt_cache=False,
+        )
+        provider = AnthropicProvider(cfg)
+        [
+            e async for e in provider.stream(
+                [Message(role=Role.SYSTEM, content="x"), Message(role=Role.USER, content="hi")],
+                [],
+            )
+        ]
+        await provider.aclose()
+
+    body = captured["body"]
+    # When cache is off, system is a plain string and no cache_control anywhere.
+    assert body["system"] == "x"
+
+
+def test_merge_anthropic_usage_normalizes_cache_fields() -> None:
+    """Anthropic reports input/cache_read/cache_creation as disjoint counters.
+    We sum them into prompt_tokens to keep semantics aligned with OpenAI."""
+    usage = _merge_anthropic_usage(
+        Usage(),
+        {
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_input_tokens": 800,
+            "cache_creation_input_tokens": 200,
+        },
+    )
+    assert usage.prompt_tokens == 1100
+    assert usage.cached_prompt_tokens == 800
+    assert usage.cache_creation_tokens == 200
+    assert usage.completion_tokens == 50
+    assert usage.cache_hit_rate == pytest.approx(800 / 1100)
+
+
+def test_usage_cache_hit_rate_zero_when_no_prompt() -> None:
+    assert Usage().cache_hit_rate == 0.0

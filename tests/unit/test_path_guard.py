@@ -58,7 +58,7 @@ def test_must_exist_nonexistent(tmp_path: Path) -> None:
 
 def test_allow_outside_flag(tmp_path: Path) -> None:
     result = resolve_and_validate("/etc/hostname", tmp_path, allow_outside=True)
-    assert result == Path("/etc/hostname")
+    assert result == Path("/etc/hostname").resolve()
 
 
 def test_is_binary_text(tmp_path: Path) -> None:
