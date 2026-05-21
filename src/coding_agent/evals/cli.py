@@ -7,7 +7,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from coding_agent.evals.runner import print_report, run_all_tasks
+from coding_agent.evals.runner import export_json_report, print_report, run_all_tasks
 from coding_agent.evals.task import EvalTask
 
 
@@ -30,9 +30,25 @@ def main() -> None:
         help="API key (defaults to env var)",
     )
     parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Override provider base URL (e.g. http://localhost:23333/api/openai/v1)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override the model name (e.g. claude-haiku-4.5)",
+    )
+    parser.add_argument(
         "--task",
         default=None,
         help="Run a specific task by ID (e.g. '01-create-file')",
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="Optional path to write a machine-readable JSON report",
     )
     parser.add_argument(
         "--list",
@@ -59,9 +75,24 @@ def main() -> None:
             print(f"Task '{args.task}' not found.", file=sys.stderr)
             sys.exit(1)
 
-    print(f"Running {len(tasks)} eval task(s) with provider '{args.provider}'...")
-    results = asyncio.run(run_all_tasks(tasks, args.provider, args.api_key))
+    print(
+        f"Running {len(tasks)} eval task(s) with provider '{args.provider}'"
+        f"{f' model={args.model}' if args.model else ''}..."
+    )
+    results = asyncio.run(
+        run_all_tasks(
+            tasks,
+            provider_name=args.provider,
+            api_key=args.api_key,
+            base_url=args.base_url,
+            model=args.model,
+        )
+    )
     print_report(results)
+
+    if args.report:
+        export_json_report(results, args.report)
+        print(f"  JSON report written to {args.report}")
 
     if not all(r.passed for r in results):
         sys.exit(1)

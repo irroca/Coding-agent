@@ -70,13 +70,34 @@ def chat(
 @app.command()
 def sessions(
     limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+    grep: Annotated[
+        str | None,
+        typer.Option("--grep", "-g", help="Only show sessions whose messages contain this substring."),
+    ] = None,
 ) -> None:
-    """List recent saved sessions."""
+    """List recent saved sessions, optionally filtered by content."""
     from coding_agent.core.session import Session
 
-    rows = Session.list_recent(limit=limit)
+    rows = Session.list_recent(limit=limit if grep is None else 500)
+    if grep:
+        matches: list[tuple[str, object]] = []
+        for sid, ts in rows:
+            try:
+                session = Session.load(sid)
+            except Exception:
+                continue
+            haystack = "\n".join(
+                m.content for m in session.messages
+                if m.content and m.role.value in ("user", "assistant")
+            )
+            if grep.lower() in haystack.lower():
+                matches.append((sid, ts))
+            if len(matches) >= limit:
+                break
+        rows = matches
+
     if not rows:
-        typer.echo("(no saved sessions)")
+        typer.echo("(no matching sessions)" if grep else "(no saved sessions)")
         return
     for sid, ts in rows:
         typer.echo(f"{sid}\t{ts.isoformat()}")
@@ -93,6 +114,45 @@ def config_show() -> None:
     import json
 
     typer.echo(json.dumps(data, indent=2, default=str))
+
+
+@app.command()
+def web(
+    host: Annotated[
+        str, typer.Option("--host", help="Bind address. Default 127.0.0.1 (localhost only).")
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p")] = 8765,
+    workspace: Annotated[
+        str | None,
+        typer.Option("--workspace", "-w", help="Workspace path (defaults to cwd from config)."),
+    ] = None,
+    open_browser: Annotated[
+        bool,
+        typer.Option(
+            "--open-browser/--no-open-browser",
+            help="Open the system browser at startup.",
+        ),
+    ] = True,
+) -> None:
+    """Run the agent in a browser UI (localhost only by default)."""
+    try:
+        from coding_agent.web.server import run as run_web
+    except ImportError as e:
+        typer.echo(
+            "Web UI dependencies missing. Install with: "
+            "pip install coding-agent[web]\n"
+            f"Original error: {e}",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+    from pathlib import Path
+
+    run_web(
+        host=host,
+        port=port,
+        workspace=Path(workspace) if workspace else None,
+        open_browser=open_browser,
+    )
 
 
 def main() -> None:

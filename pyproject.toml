@@ -46,16 +46,66 @@ dev = [
     "pre-commit>=3.7",
     "respx>=0.21",
 ]
+mcp = [
+    "mcp>=1.2",
+]
+docker = [
+    "docker>=7.1",
+]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "websockets>=13",
+]
+all = [
+    "mcp>=1.2",
+    "docker>=7.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "websockets>=13",
+]
 
 [project.scripts]
 coding-agent = "coding_agent.cli.app:main"
 cagent = "coding_agent.cli.app:main"
+coding-agent-mcp = "coding_agent.mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/example/coding-agent"
+Documentation = "https://github.com/example/coding-agent/blob/main/docs/architecture.md"
+Source = "https://github.com/example/coding-agent"
+Issues = "https://github.com/example/coding-agent/issues"
+Changelog = "https://github.com/example/coding-agent/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coding_agent"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/coding_agent/web/static" = "coding_agent/web/static"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "tests/",
+    "docs/",
+    "scripts/",
+    "frontend/src/",
+    "frontend/public/",
+    "frontend/index.html",
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml",
+    "frontend/vite.config.ts",
+    "frontend/tsconfig.json",
+    "frontend/tsconfig.node.json",
+    "frontend/tailwind.config.ts",
+    "frontend/postcss.config.js",
+    "frontend/components.json",
+    "README.md",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "pyproject.toml",
+]
 
 [tool.ruff]
 line-length = 100

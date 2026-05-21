@@ -1,0 +1,20 @@
+# Build artefacts
+.git
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+dist
+build
+*.egg-info
+
+# Local config / data
+.env
+.env.*
+docs/eval-reports
+.claude
+
+# Tests (not needed at runtime)
+tests/

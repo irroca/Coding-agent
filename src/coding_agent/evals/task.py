@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -46,7 +47,7 @@ class EvalTask:
     max_iterations: int = 15
 
     @classmethod
-    def from_dict(cls, data: dict) -> EvalTask:
+    def from_dict(cls, data: dict[str, Any]) -> EvalTask:
         assertions = [EvalAssertion(**a) for a in data.pop("assertions", [])]
         return cls(**data, assertions=assertions)
 
