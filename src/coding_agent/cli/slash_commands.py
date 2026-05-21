@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+from rich.box import ROUNDED, SIMPLE_HEAD
 from rich.console import Console
 from rich.table import Table
 
@@ -14,6 +15,16 @@ SlashHandler = Callable[..., Awaitable[bool] | bool | None]
 
 COMMANDS: dict[str, tuple[str, SlashHandler]] = {}
 
+# ── Inline color palette (kept in sync with cli/render.py) ──
+# Using hex literals means slash commands render correctly even when the
+# Console wasn't constructed with our Theme (e.g. in unit tests).
+_BRAND = "#2563eb"
+_BRAND_ALT = "#7c3aed"
+_MUTED = "#a1a1aa"
+_OK = "#10b981"
+_WARN = "#f59e0b"
+_ERROR = "#f43f5e"
+
 
 def slash(name: str, description: str):
     def decorator(fn: SlashHandler) -> SlashHandler:
@@ -22,11 +33,29 @@ def slash(name: str, description: str):
     return decorator
 
 
+def _kv_table(rows: list[tuple[str, str]]) -> Table:
+    """Two-column key/value table — used by all info-style slash commands."""
+    t = Table.grid(padding=(0, 2))
+    t.add_column(style=_MUTED, justify="right", no_wrap=True)
+    t.add_column(style="bold")
+    for k, v in rows:
+        t.add_row(k, v)
+    return t
+
+
 @slash("help", "Show available slash commands")
 def cmd_help(console: Console, **_) -> None:
-    table = Table(title="Slash Commands", show_header=True)
-    table.add_column("Command", style="bold cyan")
-    table.add_column("Description")
+    table = Table(
+        title=f"[bold {_BRAND}]◆ Slash commands[/]",
+        title_justify="left",
+        box=ROUNDED,
+        border_style=_BRAND,
+        header_style="bold",
+        show_lines=False,
+        padding=(0, 1),
+    )
+    table.add_column("Command", style=f"bold {_BRAND}", no_wrap=True)
+    table.add_column("Description", style=_MUTED)
     for name, (desc, _) in sorted(COMMANDS.items()):
         table.add_row(f"/{name}", desc)
     console.print(table)
@@ -40,23 +69,28 @@ def cmd_clear(console: Console, **_) -> None:
 @slash("cost", "Show session token usage, cache hit rate, and estimated cost")
 def cmd_cost(console: Console, session: Session, **_) -> None:
     u = session.usage
-    console.print(f"  Prompt tokens:     {u.prompt_tokens:,}")
-    console.print(f"  Completion tokens: {u.completion_tokens:,}")
-    console.print(f"  Cached tokens:     {u.cached_prompt_tokens:,}")
+    rows = [
+        ("prompt", f"{u.prompt_tokens:,}"),
+        ("completion", f"{u.completion_tokens:,}"),
+        ("cached", f"{u.cached_prompt_tokens:,}"),
+    ]
     if u.cache_creation_tokens:
-        console.print(f"  Cache writes:      {u.cache_creation_tokens:,}")
-    console.print(f"  Total tokens:      {u.total_tokens:,}")
+        rows.append(("cache writes", f"{u.cache_creation_tokens:,}"))
+    rows.append(("total", f"[bold {_BRAND}]{u.total_tokens:,}[/]"))
     if u.prompt_tokens:
-        console.print(
-            f"  Cache hit rate:    {u.cache_hit_rate * 100:.1f}% "
-            f"[dim]({u.cached_prompt_tokens:,}/{u.prompt_tokens:,})[/dim]"
+        rate = u.cache_hit_rate * 100
+        rows.append(
+            (
+                "cache hit rate",
+                f"[bold {_OK}]{rate:.1f}%[/] [{_MUTED}]({u.cached_prompt_tokens:,} / {u.prompt_tokens:,})[/]",
+            )
         )
+    console.print(_kv_table(rows))
 
 
 @slash("model", "Show current model info")
 def cmd_model(console: Console, provider_name: str = "", model_name: str = "", **_) -> None:
-    console.print(f"  Provider: {provider_name}")
-    console.print(f"  Model:    {model_name}")
+    console.print(_kv_table([("provider", provider_name), ("model", model_name)]))
 
 
 @slash("exit", "Exit the agent")
@@ -70,9 +104,17 @@ def cmd_compact(console: Console, session: Session, **_) -> None:
 
     total = count_messages(session.messages)
     msg_count = len(session.messages)
-    console.print(f"  Messages:    {msg_count}")
-    console.print(f"  Est. tokens: {total:,}")
-    console.print("  [dim]Compaction runs automatically when context budget is exceeded.[/dim]")
+    console.print(
+        _kv_table(
+            [
+                ("messages", str(msg_count)),
+                ("est. tokens", f"{total:,}"),
+            ]
+        )
+    )
+    console.print(
+        f"  [{_MUTED}]Compaction runs automatically when the context budget is exceeded.[/]"
+    )
 
 
 def dispatch_slash(command_line: str, **kwargs) -> bool | None:
@@ -83,7 +125,10 @@ def dispatch_slash(command_line: str, **kwargs) -> bool | None:
     if handler_entry is None:
         console = kwargs.get("console")
         if console:
-            console.print(f"  Unknown command: /{name}. Type /help for available commands.", style="dim")
+            console.print(
+                f"  [bold {_ERROR}]✗[/] Unknown command [bold {_BRAND}]/{name}[/]. "
+                f"Type [bold {_BRAND}]/help[/] for available commands."
+            )
         return None
     _, handler = handler_entry
     result = handler(**kwargs)
@@ -95,21 +140,29 @@ def cmd_history(console: Console, session: Session, **_) -> None:
     from collections import Counter
 
     counts = Counter(m.role.value for m in session.messages)
-    console.print(f"  Total messages: {len(session.messages)}")
+    rows = [("total", str(len(session.messages)))]
     for role in ("system", "user", "assistant", "tool"):
         if counts[role]:
-            console.print(f"    {role}: {counts[role]}")
+            rows.append((role, str(counts[role])))
+    console.print(_kv_table(rows))
 
 
 @slash("sessions", "List recent sessions")
 def cmd_sessions(console: Console, **_) -> None:
     recent = Session.list_recent(10)
     if not recent:
-        console.print("  No saved sessions.", style="dim")
+        console.print(f"  [{_MUTED}]No saved sessions.[/]")
         return
-    table = Table(title="Recent Sessions", show_header=True)
-    table.add_column("Session ID", style="cyan")
-    table.add_column("Created")
+    table = Table(
+        title=f"[bold {_BRAND}]◆ Recent sessions[/]",
+        title_justify="left",
+        box=SIMPLE_HEAD,
+        border_style=_BRAND,
+        header_style="bold",
+        padding=(0, 1),
+    )
+    table.add_column("Session ID", style=f"bold {_BRAND}", no_wrap=True)
+    table.add_column("Created", style=_MUTED)
     for sid, created in recent:
         table.add_row(sid, created.strftime("%Y-%m-%d %H:%M"))
     console.print(table)
@@ -122,23 +175,42 @@ def cmd_permissions(console: Console, **_) -> None:
     try:
         config = load_config()
     except Exception:
-        console.print("  [dim]Could not load config.[/dim]")
+        console.print(f"  [{_MUTED}]Could not load config.[/]")
         return
     p = config.permissions
-    console.print(f"  file_read:  {p.file_read}")
-    console.print(f"  file_write: {p.file_write}")
-    console.print(f"  bash:       {p.bash}")
+
+    def colorize(decision: str) -> str:
+        d = str(decision).lower()
+        if "allow" in d:
+            return f"[bold {_OK}]{decision}[/]"
+        if "deny" in d:
+            return f"[bold {_ERROR}]{decision}[/]"
+        return f"[bold {_WARN}]{decision}[/]"
+
+    rows = [
+        ("file_read", colorize(p.file_read)),
+        ("file_write", colorize(p.file_write)),
+        ("bash", colorize(p.bash)),
+    ]
     if p.rules_file:
-        console.print(f"  rules_file: {p.rules_file}")
+        rows.append(("rules_file", str(p.rules_file)))
+    console.print(_kv_table(rows))
 
 
 @slash("tools", "List all registered tools")
 def cmd_tools(console: Console, **_) -> None:
     from coding_agent.tools.base import all_tools
 
-    table = Table(title="Registered Tools", show_header=True)
-    table.add_column("Tool", style="bold cyan")
-    table.add_column("Description")
+    table = Table(
+        title=f"[bold {_BRAND}]◆ Registered tools[/]",
+        title_justify="left",
+        box=SIMPLE_HEAD,
+        border_style=_BRAND,
+        header_style="bold",
+        padding=(0, 1),
+    )
+    table.add_column("Tool", style=f"bold {_BRAND}", no_wrap=True)
+    table.add_column("Description", style=_MUTED)
     for name, cls in sorted(all_tools().items()):
         table.add_row(name, cls.description[:80])
     console.print(table)
@@ -171,7 +243,7 @@ def cmd_diff(console: Console, session: Session, **_) -> None:
                 file_snapshots[path] = (prev, new)
 
     if not file_snapshots:
-        console.print("  [dim]No file changes recorded in this session yet.[/dim]")
+        console.print(f"  [{_MUTED}]No file changes recorded in this session yet.[/]")
         return
 
     import difflib
@@ -189,17 +261,17 @@ def cmd_diff(console: Console, session: Session, **_) -> None:
         )
         if not diff_text:
             continue
-        console.print(f"\n[bold]{path}[/bold]")
+        console.print(f"\n[bold]{path}[/]")
         for line in diff_text.splitlines():
             style = ""
             if line.startswith("+++") or line.startswith("---"):
                 style = "bold"
             elif line.startswith("+"):
-                style = "green"
+                style = _OK
             elif line.startswith("-"):
-                style = "red"
+                style = _ERROR
             elif line.startswith("@@"):
-                style = "cyan"
+                style = _BRAND
             console.print(line, style=style, highlight=False)
 
 
@@ -232,11 +304,11 @@ def cmd_undo(console: Console, session: Session, **_) -> None:
                     target.write_text(prev, encoding="utf-8")
                     action = "restored"
             except OSError as e:
-                console.print(f"  [red]Cannot undo {target}: {e}[/red]")
+                console.print(f"  [bold {_ERROR}]✗ Cannot undo {target}:[/] {e}")
                 return
             r.metadata["undone"] = True
-            console.print(f"  [yellow]Undone[/yellow]: {action} {target}")
+            console.print(f"  [bold {_WARN}]↶ Undone[/]: {action} [bold {_BRAND}]{target}[/]")
             session.save()
             return
 
-    console.print("  [dim]No undoable write/edit in this session.[/dim]")
+    console.print(f"  [{_MUTED}]No undoable write/edit in this session.[/]")

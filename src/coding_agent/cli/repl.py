@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import asyncio
 
-from rich.console import Console
+from rich.box import ROUNDED
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
+from coding_agent import __version__
 from coding_agent.agent.loop import Agent
 from coding_agent.cli.confirm import confirm_action
 from coding_agent.cli.prompt import create_prompt_session
@@ -29,19 +33,71 @@ from coding_agent.providers.registry import build_provider
 log = get_logger("repl")
 
 
-def _banner(console: Console, config: Config, provider: LLMProvider) -> None:
+def _wordmark() -> Text:
+    """ASCII wordmark coloured with a blue→violet gradient."""
+    letters = "CODING  AGENT"
+    # Two-stop gradient: brand blue (#2563eb) → brand violet (#7c3aed).
+    starts = (0x25, 0x63, 0xEB)
+    ends = (0x7C, 0x3A, 0xED)
+    n = max(len(letters) - 1, 1)
+    text = Text()
+    for i, ch in enumerate(letters):
+        if ch == " ":
+            text.append(" ")
+            continue
+        r = int(starts[0] + (ends[0] - starts[0]) * i / n)
+        g = int(starts[1] + (ends[1] - starts[1]) * i / n)
+        b = int(starts[2] + (ends[2] - starts[2]) * i / n)
+        text.append(ch, style=f"bold #{r:02x}{g:02x}{b:02x}")
+    return text
+
+
+def _banner(
+    console: Console,
+    config: Config,
+    provider: LLMProvider,
+    session: Session,
+) -> None:
+    """Render a modern startup screen — gradient wordmark, info grid, tip strip."""
+    info = Table.grid(padding=(0, 2))
+    info.add_column(style="muted", no_wrap=True)
+    info.add_column(style="bold")
+    info.add_row("provider", f"[brand]{config.provider}[/] [muted]·[/] {provider.model}")
+    info.add_row("workspace", str(config.workspace))
+    info.add_row("session", session.id)
+
+    body = Group(
+        Text(),
+        _wordmark(),
+        Text(f"v{__version__}  ·  production-grade terminal coding agent", style="muted"),
+        Text(),
+        info,
+    )
+
     console.print()
     console.print(
-        Text("  Coding Agent", style="bold cyan"),
-        Text(" v0.1.0", style="dim"),
-        Text(f"  [{config.provider}:{provider.model}]", style="dim"),
+        Panel(
+            body,
+            box=ROUNDED,
+            border_style="brand",
+            padding=(0, 2),
+            expand=False,
+        )
     )
-    console.print(
-        Text(f"  Workspace: {config.workspace}", style="dim"),
-    )
-    console.print(
-        Text("  Type /help for commands. Ctrl+C to cancel. Ctrl+D to exit.", style="dim"),
-    )
+
+    tips = Text()
+    tips.append(" ⌨  ", style="brand")
+    tips.append("/help", style="kbd")
+    tips.append(" commands  ", style="muted")
+    tips.append("Enter", style="kbd")
+    tips.append(" send  ", style="muted")
+    tips.append("Esc Enter", style="kbd")
+    tips.append(" newline  ", style="muted")
+    tips.append("Ctrl+C", style="kbd")
+    tips.append(" cancel  ", style="muted")
+    tips.append("Ctrl+D", style="kbd")
+    tips.append(" exit", style="muted")
+    console.print(tips)
     console.print()
 
 
@@ -76,16 +132,16 @@ async def _async_repl(
     try:
         provider = build_provider(config, override=provider_override)
     except Exception as e:
-        console.print(f"  [bold red]Failed to initialize provider:[/] {e}")
-        console.print("  Check your API key configuration (.env or environment).")
+        console.print(f"  [error]✗ Failed to initialize provider:[/] {e}")
+        console.print("  [muted]Check your API key configuration (.env or environment).[/]")
         return
 
     if resume:
         try:
             session = Session.load(resume)
-            console.print(f"  [dim]Resumed session: {session.id}[/dim]")
+            console.print(f"  [muted]↻ Resumed session[/] [accent]{session.id}[/]")
         except Exception as e:
-            console.print(f"  [bold red]Cannot resume session '{resume}':[/] {e}")
+            console.print(f"  [error]✗ Cannot resume session[/] '{resume}': {e}")
             return
     else:
         session = Session(
@@ -120,24 +176,21 @@ async def _async_repl(
             await mcp_host.start()
         except ImportError:
             console.print(
-                "  [yellow]mcp_servers configured but `mcp` extra is not "
-                "installed. Run `pip install coding-agent[mcp]`.[/yellow]"
+                "  [warn]⚠[/] mcp_servers configured but the [accent]mcp[/] extra is "
+                "not installed. Run [bold]pip install coding-agent[mcp][/]."
             )
             mcp_host = None
         except Exception as e:
-            console.print(f"  [yellow]Failed to start MCP host: {e}[/yellow]")
+            console.print(f"  [warn]⚠ Failed to start MCP host:[/] {e}")
             mcp_host = None
 
-    _banner(console, config, provider)
+    _banner(console, config, provider, session)
 
     while True:
         try:
-            user_input = await asyncio.to_thread(
-                prompt_session.prompt,
-                "  > ",
-            )
+            user_input = await asyncio.to_thread(prompt_session.prompt)
         except EOFError:
-            console.print("\n  [dim]Goodbye.[/dim]")
+            console.print("\n  [muted]✦ Goodbye.[/]")
             break
         except KeyboardInterrupt:
             console.print()
@@ -156,7 +209,7 @@ async def _async_repl(
                 model_name=provider.model,
             )
             if should_exit is True:
-                console.print("  [dim]Goodbye.[/dim]")
+                console.print("  [muted]✦ Goodbye.[/]")
                 break
             continue
 
@@ -166,10 +219,10 @@ async def _async_repl(
                 renderer.feed(event)
         except KeyboardInterrupt:
             agent.cancel()
-            console.print("\n  [dim]Interrupted.[/dim]")
+            console.print("\n  [warn]⏹ Interrupted.[/]")
         except Exception as e:
             log.error("repl_error", error=str(e), exc_info=True)
-            console.print(f"\n  [bold red]Error:[/] {e}")
+            console.print(f"\n  [error]✗ Error:[/] {e}")
         finally:
             renderer.stop()
 
