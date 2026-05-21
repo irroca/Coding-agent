@@ -12,7 +12,7 @@
 |------|----------|--------|----------|
 | 工具系统 | `test_tools_rw_ls.py` | 15 | read/write/ls 工具的正常与边界行为 |
 | 工具系统 | `test_tools_edit_glob_grep_bash.py` | 22 | edit/glob/grep/bash 工具 |
-| 工具系统 | `test_tools_todo_task.py` | 7 | todo_write 状态管理、task 工具占位 |
+| 工具系统 | `test_tools_todo_task.py` | 多个 | todo_write 状态管理、`task` 子 Agent 派发（只读工具集 + 单层递归） |
 | 工具系统 | `test_tools_base.py` | 若干 | 注册表、schema 生成、参数校验 |
 | Grep 回退 | `test_grep_fallback.py` | 9 | 无 rg 时的纯 Python 搜索 |
 | 编排器 | `test_orchestrator.py` | 15 | 权限检查、并行执行、错误隔离、审计 |
@@ -80,7 +80,7 @@ uv run pytest tests/ -v -m "not requires_api"
 
 ## 覆盖率目标
 
-目标 ≥70%。当前实际覆盖率 **75%**（230 个测试全部通过）。CLI 层（`app.py`、`repl.py`、`render.py` 等）因涉及终端交互不纳入自动化测试覆盖率目标，其正确性通过手动冒烟测试验证。
+目标 ≥70%。当前共 **294** 个测试用例全部通过。CLI 层（`app.py`、`repl.py`、`render.py` 等）因涉及终端交互不纳入自动化测试覆盖率目标，其正确性通过手动冒烟测试验证。
 
 ## 自动化评测框架（M9）
 
@@ -107,17 +107,38 @@ uv run pytest tests/ -v -m "not requires_api"
 
 ```bash
 # 列出所有任务
-bash scripts/eval.sh --list
+uv run python -m coding_agent.evals.cli --list
 
-# 运行全部任务（需要 API Key）
-DEEPSEEK_API_KEY=xxx bash scripts/eval.sh
+# 运行全部任务（需要 API Key 或本地代理）
+DEEPSEEK_API_KEY=xxx uv run python -m coding_agent.evals.cli
 
 # 运行单个任务
-DEEPSEEK_API_KEY=xxx bash scripts/eval.sh --task 01-create-file
+DEEPSEEK_API_KEY=xxx uv run python -m coding_agent.evals.cli --task 01-create-file
 
-# 指定 Provider
-DEEPSEEK_API_KEY=xxx bash scripts/eval.sh --provider deepseek
+# 对接本地 OpenAI-兼容代理 + 导出 JSON 报告
+uv run python -m coding_agent.evals.cli \
+    --provider openai --base-url http://localhost:23333/api/openai/v1 \
+    --api-key sk-local --model claude-haiku-4.5 \
+    --report docs/eval-reports/run-$(date +%Y%m%d).json
+
+# 对接 Anthropic 端点
+uv run python -m coding_agent.evals.cli \
+    --provider anthropic --base-url http://localhost:23333/api/anthropic/v1 \
+    --api-key sk-local --model claude-haiku-4.5
 ```
+
+### 输出指标（TaskMetrics）
+
+每个任务记录：
+
+- `iterations` — Agent 主循环轮次
+- `tool_calls` + `tool_histogram` — 工具调用总数与各工具命中分布
+- `usage.prompt_tokens` / `completion_tokens` / `cached_prompt_tokens` / `cache_creation_tokens`
+- `usage.cache_hit_rate` — prompt cache 命中率（衡量 Anthropic `cache_control` 是否生效）
+- `error_events` — provider/工具错误事件计数
+- 任务级 `passed` + 每条 assertion 的 `ok` / `message`
+
+`--report path.json` 会把所有任务的 metrics 序列化成单个 JSON 文件，便于跨次评测对比（参考 `docs/eval-reports/baseline-*.json` 与 `docs/eval-reports/final-*.json`）。
 
 ### 断言类型
 

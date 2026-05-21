@@ -1,57 +1,79 @@
-# Python
+# ---- Python ----
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Packaging / build artifacts
 build/
 dist/
 *.egg-info/
 .eggs/
 *.egg
+*.whl
 
-# Virtual environments
+# ---- Virtual environments ----
+# We standardize on `uv` — `uv sync` recreates .venv/ from uv.lock.
+# uv.lock IS committed (do not add it here).
 .venv/
 venv/
 env/
 ENV/
 
-# Environment
+# ---- Environment / secrets ----
 .env
 .env.local
 .env.*.local
 
-# Testing
+# ---- Testing / coverage ----
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
-.tox/
-.cache
 coverage.xml
 *.cover
+.tox/
+.cache/
 
-# Type checking
+# ---- Type-check / lint caches ----
 .mypy_cache/
 .ruff_cache/
 .dmypy.json
 
-# IDE
+# ---- IDE / editor ----
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# OS
+# ---- OS ----
 .DS_Store
 Thumbs.db
 
-# Project-specific
-~/.coding_agent/
+# ---- Project runtime state ----
+# Sessions/audit logs the agent writes when run locally.
 .coding_agent_session/
-.claude/
 audit.log
 *.log
 
-# Build artifacts
-*.whl
+# Claude Code local config (per-developer).
+.claude/
+
+# ---- Frontend (Node) ----
+# The built bundle under src/coding_agent/web/static/ IS committed
+# (so wheel users don't need Node). Source-side build outputs are not.
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Local scratch / personal notes ----
+# Anything under a top-level `scratch/` or `tmp/` directory is treated as
+# local-only. Useful for one-off experiments without polluting commits.
+scratch/
+tmp/
