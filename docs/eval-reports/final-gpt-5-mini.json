@@ -1,0 +1,223 @@
+{
+  "summary": {
+    "total": 10,
+    "passed": 9
+  },
+  "results": [
+    {
+      "task_id": "01-create-file",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 12.198846542043611,
+      "metrics": {
+        "iterations": 2,
+        "tool_calls": 1,
+        "tool_histogram": {
+          "write": 1
+        },
+        "prompt_tokens": 4451,
+        "completion_tokens": 2183,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "02-edit-file",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 30.556683292030357,
+      "metrics": {
+        "iterations": 5,
+        "tool_calls": 4,
+        "tool_histogram": {
+          "glob": 1,
+          "grep": 1,
+          "read": 1,
+          "edit": 1
+        },
+        "prompt_tokens": 12083,
+        "completion_tokens": 5565,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "03-create-project",
+      "passed": false,
+      "error": null,
+      "duration_seconds": 75.99085995799396,
+      "metrics": {
+        "iterations": 0,
+        "tool_calls": 0,
+        "tool_histogram": {},
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": [
+        {
+          "describe": "File exists: src/calculator.py",
+          "detail": "Not found: /var/folders/5h/kwnc_kq16zv5649xkqdhqc_m0000gn/T/eval_03-create-project_y839z_yc/src/calculator.py"
+        },
+        {
+          "describe": "File exists: tests/test_calculator.py",
+          "detail": "Not found: /var/folders/5h/kwnc_kq16zv5649xkqdhqc_m0000gn/T/eval_03-create-project_y839z_yc/tests/test_calculator.py"
+        },
+        {
+          "describe": "File src/calculator.py contains 'def add('",
+          "detail": "File not found: /var/folders/5h/kwnc_kq16zv5649xkqdhqc_m0000gn/T/eval_03-create-project_y839z_yc/src/calculator.py"
+        },
+        {
+          "describe": "File src/calculator.py contains 'def subtract('",
+          "detail": "File not found: /var/folders/5h/kwnc_kq16zv5649xkqdhqc_m0000gn/T/eval_03-create-project_y839z_yc/src/calculator.py"
+        },
+        {
+          "describe": "File tests/test_calculator.py contains 'assert'",
+          "detail": "File not found: /var/folders/5h/kwnc_kq16zv5649xkqdhqc_m0000gn/T/eval_03-create-project_y839z_yc/tests/test_calculator.py"
+        }
+      ]
+    },
+    {
+      "task_id": "04-fix-bug",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 41.9257178750122,
+      "metrics": {
+        "iterations": 9,
+        "tool_calls": 8,
+        "tool_histogram": {
+          "glob": 1,
+          "ls": 1,
+          "read": 3,
+          "edit": 1,
+          "write": 1,
+          "bash": 1
+        },
+        "prompt_tokens": 25225,
+        "completion_tokens": 10083,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "05-search-and-report",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 28.748224416049197,
+      "metrics": {
+        "iterations": 2,
+        "tool_calls": 1,
+        "tool_histogram": {
+          "grep": 1
+        },
+        "prompt_tokens": 4419,
+        "completion_tokens": 2359,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "06-rename-function",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 24.096090834005736,
+      "metrics": {
+        "iterations": 7,
+        "tool_calls": 6,
+        "tool_histogram": {
+          "grep": 1,
+          "read": 2,
+          "edit": 3
+        },
+        "prompt_tokens": 18862,
+        "completion_tokens": 8770,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "07-add-docstrings",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 23.274448417010717,
+      "metrics": {
+        "iterations": 4,
+        "tool_calls": 3,
+        "tool_histogram": {
+          "read": 1,
+          "edit": 2
+        },
+        "prompt_tokens": 10041,
+        "completion_tokens": 4788,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "08-run-and-fix",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 44.59551754104905,
+      "metrics": {
+        "iterations": 9,
+        "tool_calls": 8,
+        "tool_histogram": {
+          "ls": 1,
+          "read": 2,
+          "bash": 2,
+          "edit": 3
+        },
+        "prompt_tokens": 25966,
+        "completion_tokens": 9853,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "09-write-readme",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 34.21674637508113,
+      "metrics": {
+        "iterations": 5,
+        "tool_calls": 4,
+        "tool_histogram": {
+          "ls": 1,
+          "read": 2,
+          "write": 1
+        },
+        "prompt_tokens": 12710,
+        "completion_tokens": 5518,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "10-implement-class",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 16.94362304196693,
+      "metrics": {
+        "iterations": 2,
+        "tool_calls": 1,
+        "tool_histogram": {
+          "write": 1
+        },
+        "prompt_tokens": 4809,
+        "completion_tokens": 2544,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    }
+  ]
+}

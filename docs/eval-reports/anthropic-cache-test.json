@@ -1,0 +1,200 @@
+{
+  "summary": {
+    "total": 10,
+    "passed": 10
+  },
+  "results": [
+    {
+      "task_id": "01-create-file",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 4.49448949994985,
+      "metrics": {
+        "iterations": 2,
+        "tool_calls": 1,
+        "tool_histogram": {
+          "write": 1
+        },
+        "prompt_tokens": 5511,
+        "completion_tokens": 96,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "02-edit-file",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 6.975441874936223,
+      "metrics": {
+        "iterations": 3,
+        "tool_calls": 2,
+        "tool_histogram": {
+          "read": 1,
+          "edit": 1
+        },
+        "prompt_tokens": 8696,
+        "completion_tokens": 180,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "03-create-project",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 19.408786875079386,
+      "metrics": {
+        "iterations": 6,
+        "tool_calls": 5,
+        "tool_histogram": {
+          "bash": 3,
+          "write": 2
+        },
+        "prompt_tokens": 19897,
+        "completion_tokens": 811,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "04-fix-bug",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 6.697008457966149,
+      "metrics": {
+        "iterations": 3,
+        "tool_calls": 2,
+        "tool_histogram": {
+          "read": 1,
+          "edit": 1
+        },
+        "prompt_tokens": 8797,
+        "completion_tokens": 239,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "05-search-and-report",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 4.750716875074431,
+      "metrics": {
+        "iterations": 2,
+        "tool_calls": 1,
+        "tool_histogram": {
+          "grep": 1
+        },
+        "prompt_tokens": 5464,
+        "completion_tokens": 142,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "06-rename-function",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 9.826218540896662,
+      "metrics": {
+        "iterations": 4,
+        "tool_calls": 6,
+        "tool_histogram": {
+          "glob": 1,
+          "grep": 1,
+          "read": 2,
+          "edit": 2
+        },
+        "prompt_tokens": 13059,
+        "completion_tokens": 498,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "07-add-docstrings",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 7.179611291969195,
+      "metrics": {
+        "iterations": 3,
+        "tool_calls": 3,
+        "tool_histogram": {
+          "read": 1,
+          "edit": 2
+        },
+        "prompt_tokens": 9217,
+        "completion_tokens": 353,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "08-run-and-fix",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 15.083242999971844,
+      "metrics": {
+        "iterations": 6,
+        "tool_calls": 5,
+        "tool_histogram": {
+          "bash": 3,
+          "read": 1,
+          "edit": 1
+        },
+        "prompt_tokens": 20037,
+        "completion_tokens": 531,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "09-write-readme",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 17.964170208084397,
+      "metrics": {
+        "iterations": 4,
+        "tool_calls": 5,
+        "tool_histogram": {
+          "ls": 1,
+          "read": 2,
+          "bash": 1,
+          "write": 1
+        },
+        "prompt_tokens": 13015,
+        "completion_tokens": 795,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    },
+    {
+      "task_id": "10-implement-class",
+      "passed": true,
+      "error": null,
+      "duration_seconds": 4.71397429110948,
+      "metrics": {
+        "iterations": 2,
+        "tool_calls": 1,
+        "tool_histogram": {
+          "write": 1
+        },
+        "prompt_tokens": 5760,
+        "completion_tokens": 287,
+        "cached_prompt_tokens": 0,
+        "cache_hit_rate": 0.0
+      },
+      "failed_assertions": []
+    }
+  ]
+}
